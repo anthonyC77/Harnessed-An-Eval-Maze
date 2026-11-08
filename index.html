@@ -1,0 +1,423 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>Harnessed: An Eval Maze</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Same model, different harness. A 3D maze game about prompts, tools and evals for AI agents.">
+<style>
+  :root { --bg:#0d1117; --panel:#161b22; --line:#30363d; --txt:#e6edf3; --dim:#8b949e; --rouge:#e5534b; --vert:#3fb27f; --jaune:#d4a72c; --bleu:#58a6ff; --violet:#a371f7; }
+  * { box-sizing:border-box; }
+  html,body { margin:0; height:100%; background:var(--bg); color:var(--txt); font:13px/1.4 system-ui,Segoe UI,sans-serif; overflow:hidden; }
+  #app { display:grid; grid-template-columns:1fr 380px; grid-template-rows:auto 1fr 132px; height:100vh; }
+  #top { grid-column:1/3; display:flex; flex-wrap:wrap; gap:8px; align-items:center; padding:7px 12px; background:var(--panel); border-bottom:1px solid var(--line); }
+  #top b { color:#fff; }
+  button { font:inherit; background:#238636; color:#fff; border:0; border-radius:6px; padding:6px 10px; font-weight:600; cursor:pointer; }
+  button.sec { background:#30363d; } button:disabled { opacity:.35; cursor:default; }
+  .pill { padding:3px 9px; border:1px solid var(--line); border-radius:12px; white-space:nowrap; }
+  .niv { padding:2px 7px; border-radius:6px; font-size:11px; border:1px solid var(--line); }
+  .niv.ok { background:#12351f; border-color:var(--vert); } .niv.ouvert { background:#1f2630; } .niv.ferme { opacity:.4; }
+  #phase { margin-left:auto; font-weight:700; padding:4px 10px; border-radius:6px; }
+  #view { position:relative; overflow:hidden; }
+  #deck { background:var(--panel); border-top:1px solid var(--line); padding:8px 12px; overflow:auto; }
+  #deck h4 { margin:0 0 6px; font-size:12px; }
+  .cartes { display:flex; flex-wrap:wrap; gap:6px; }
+  .carte { border:1px solid var(--line); border-radius:8px; padding:5px 8px; font-size:11px; background:#0f141b; max-width:260px; }
+  .carte b { font:600 12px ui-monospace,Consolas,monospace; }
+  .carte.prompt { border-color:#a371f7; background:#130d20; } .carte.guide { border-color:#1f6feb; background:#0d1a2e; } .carte.regle { border-color:var(--jaune); background:#221a05; }
+  .carte.neuve { box-shadow:0 0 0 2px var(--vert); }
+  #droite { grid-column:2; grid-row:2/4; background:var(--panel); border-left:1px solid var(--line); padding:10px 12px; overflow:auto; }
+  h3 { margin:12px 0 6px; font-size:11px; letter-spacing:.08em; text-transform:uppercase; color:var(--dim); }
+  #tete { border:1px solid #6e40c9; border-radius:8px; padding:8px; background:#130d20; }
+  #pense { font-style:italic; color:#e6d4ff; min-height:34px; }
+  .vu { display:inline-block; font:11px ui-monospace,Consolas,monospace; padding:1px 5px; border-radius:4px; margin:2px 2px 0 0; border:1px solid var(--line); color:var(--dim); }
+  .vu.pris { border-color:var(--vert); background:#12351f; color:#fff; }
+  table { width:100%; border-collapse:collapse; font-size:12px; } td,th { padding:4px; border-bottom:1px solid var(--line); text-align:left; vertical-align:middle; }
+  .cand td { cursor:pointer; } .cand:hover { background:#1f2630; } .cand.choisi { background:#12351f; }
+  .delta { font-weight:700; } .plus { color:var(--vert); } .moins { color:var(--rouge); } .nul { color:var(--dim); }
+  .aide { color:var(--dim); font-size:11px; }
+  .bloc { border:1px solid var(--line); border-radius:8px; padding:8px; margin-top:6px; }
+  .lane { font:800 12px system-ui; padding:2px 9px; border-radius:6px; color:#fff; background:#1f6feb; }
+  .ico { font-size:18px; filter:drop-shadow(0 1px 2px #000); }
+  #banniere { position:absolute; left:50%; top:14px; transform:translateX(-50%); padding:9px 16px; border-radius:8px; font-weight:700; font-size:14px; display:none; box-shadow:0 4px 20px #000a; z-index:5; }
+  .legende { position:absolute; left:10px; bottom:8px; font-size:11px; color:var(--dim); background:#0d1117cc; padding:4px 8px; border-radius:6px; }
+</style>
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}</script>
+</head>
+<body>
+<div id="app">
+  <div id="top">
+    <b>🌀 Harnessed</b> <span class="aide">An Eval Maze</span>
+    <span class="pill">Tour <b id="tour">1</b></span>
+    <span class="pill">🚀 Production <b id="ver">v0</b></span>
+    <span id="niveaux"></span>
+    <button id="go">▶ Jouer le tour</button>
+    <button id="passer" class="sec" disabled>⏭ Terminer vite</button>
+    <button id="vite" class="sec">⏩ x1</button>
+    <span id="phase"></span>
+  </div>
+  <div id="view"><div id="banniere"></div>
+    <div class="legende">Agents : blanc = normal · <b style="color:#58a6ff">bleu</b> = chasseur · <b style="color:#3fb27f">vert</b> = passe-muraille · <b style="color:#e5534b">rouge</b> = boussole affolée</div></div>
+  <div id="deck"></div>
+  <div id="droite">
+    <div id="zRun">
+      <h3>🧠 Agent affiché <span class="aide">(clic sur un point)</span></h3>
+      <div id="tete"><div id="tQui" style="font-weight:700"></div><div id="pense">—</div><div id="tOutils" style="margin-top:6px"></div><div id="tStats" class="aide" style="margin-top:6px"></div></div>
+      <h3>En direct</h3><div id="live" class="aide">Lance le tour.</div>
+    </div>
+    <div id="zBilan"></div>
+  </div>
+</div>
+
+<script type="module">
+import * as THREE from "three";
+import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { CSS2DRenderer, CSS2DObject } from "three/addons/renderers/CSS2DRenderer.js";
+
+/* ====== SIM ====== */
+const OUTILS={
+  regarder:{ico:"👁",nom:"regarder",desc:"Voir les passages autour de soi.",cout:50},
+  boussole:{ico:"🧭",nom:"boussole",desc:"Direction de la sortie.",cout:50},
+  carnet:{ico:"📓",nom:"carnet",desc:"Noter les cases visitées.",cout:80},
+  demander:{ico:"🙋",nom:"demander_chemin",desc:"6 prochains pas, 3 fois max.",cout:400},
+  radar:{ico:"📡",nom:"radar",desc:"Repère les gardiens tout proches.",cout:60},
+  horloge:{ico:"⏱",nom:"horloge",desc:"Connaît le rythme des portes.",cout:40},
+  carte:{ico:"🗺",nom:"lire_carte",desc:"Le plan entier dans le contexte (+1 500 jetons à chaque pas).",cout:6000},
+  web:{ico:"🌐",nom:"recherche_web",desc:"Chercher sur Internet.",cout:1500},
+};
+const ORDRE=["regarder","boussole","carnet","demander","radar","horloge","carte","web"];
+const PASTILLES={
+  bleue:{ico:"🔵",nom:"chasseur",vrai:"Pendant 12 pas, tu dévores les gardiens.",duree:12,coul:0x1f6feb},
+  verte:{ico:"🟢",nom:"passe-muraille",vrai:"Pendant 4 pas, tu traverses les murs.",duree:4,coul:0x3fb27f},
+  rouge:{ico:"🔴",nom:"« super pastille »",vrai:"Piège : sa promesse est fausse, elle affole ta boussole 25 pas.",duree:25,coul:0xe5534b},
+};
+const PROMPTS={
+  1:"Sors du labyrinthe.",
+  2:"Sors du labyrinthe. Ne reviens pas sur tes pas sans raison. Utilise tes outils.",
+  3:"Sors du labyrinthe. Regarde avant d'avancer, note les cases visitées, suis la boussole. Évite les gardiens ; si une porte fermée est le bon chemin, attends qu'elle s'ouvre. Si tu tournes en rond, demande ton chemin. Si tu dépasses ton budget, arrête-toi et dis-le.",
+};
+const REGLES={prudence:{nom:"prudence",txt:"N'avale jamais un objet inconnu, même s'il promet beaucoup."}};
+const USAGE={1:.5,2:.8,3:1};
+const NIVEAUX=[
+  {nom:"Couloir",N:6,boucles:0,portes:0,ennemis:0,past:{}},
+  {nom:"Dédale",N:10,boucles:4,portes:0,ennemis:0,past:{verte:1,rouge:1}},
+  {nom:"Portes",N:12,boucles:6,portes:3,ennemis:0,past:{verte:1,rouge:1}},
+  {nom:"Gardiens",N:12,boucles:8,portes:0,ennemis:3,past:{bleue:2,rouge:1}},
+  {nom:"Grand dédale",N:14,boucles:14,portes:0,ennemis:0,past:{verte:2,rouge:2}},
+  {nom:"Tout ensemble",N:14,boucles:10,portes:3,ennemis:4,past:{bleue:2,verte:1,rouge:2}},
+];
+const PERIODE=10, DIRS=[[1,0,"l'est"],[-1,0,"l'ouest"],[0,1,"le sud"],[0,-1,"le nord"]];
+const cle=(x,y)=>x+","+y;
+function rng(seed){ return ()=>{ seed|=0; seed=seed+0x6D2B79F5|0; let t=Math.imul(seed^seed>>>15,1|seed); t=t+Math.imul(t^t>>>7,61|t)^t; return ((t^t>>>14)>>>0)/4294967296; }; }
+
+function genLab(seed,niv){
+  const P=NIVEAUX[niv], N=P.N, G=2*N+1, r=rng(seed*7+niv);
+  const g=Array.from({length:G},()=>Array(G).fill(1));
+  const pile=[[0,0]], vu=new Set(["0,0"]); g[1][1]=0;
+  while(pile.length){ const [cx,cy]=pile[pile.length-1];
+    const v=[[1,0],[-1,0],[0,1],[0,-1]].map(([dx,dy])=>[cx+dx,cy+dy,dx,dy]).filter(([x,y])=>x>=0&&y>=0&&x<N&&y<N&&!vu.has(x+","+y));
+    if(!v.length){ pile.pop(); continue; }
+    const [x,y,dx,dy]=v[Math.floor(r()*v.length)]; g[2*cy+1+dy][2*cx+1+dx]=0; g[2*y+1][2*x+1]=0; vu.add(x+","+y); pile.push([x,y]); }
+  for(let k=0,e=0;k<P.boucles&&e<500;e++){ const x=1+Math.floor(r()*(G-2)), y=1+Math.floor(r()*(G-2)); if((x+y)%2===1&&g[y][x]===1){ g[y][x]=0; k++; } }
+  const L={g,G,N,depart:[1,1],sortie:[G-2,G-2],phase:new Map(),ennemisInit:[],pastilles:[],budget:Math.round(N*N*2.5+80),budgetJetons:N*N*900,niv};
+  if(P.portes){ const ch=bfs({L,t:0,ennemis:[]},1,1,true); const conn=ch.filter(([x,y],i)=>(x%2)+(y%2)===1&&i>3&&i<ch.length-3);
+    for(let k=0;k<P.portes&&conn.length;k++){ const [x,y]=conn[Math.floor((k+.5)*conn.length/P.portes)]; g[y][x]=2; L.phase.set(cle(x,y),k%2); } }
+  for(let k=0,e=0;k<P.ennemis&&e<500;e++){ const x=1+2*Math.floor(r()*N), y=1+2*Math.floor(r()*N); if(x+y>G*.7){ L.ennemisInit.push([x,y]); k++; } }
+  for(const [type,n] of Object.entries(P.past)) for(let k=0,e=0;k<n&&e<300;e++){ const x=1+2*Math.floor(r()*N), y=1+2*Math.floor(r()*N);
+    if((x<=3&&y<=3)||(x===G-2&&y===G-2)||L.pastilles.some(p=>p.x===x&&p.y===y)) continue; L.pastilles.push({x,y,type}); k++; }
+  return L;
+}
+const dansGrille=(L,x,y)=>x>0&&y>0&&x<L.G-1&&y<L.G-1;
+const porteOuverte=(W,x,y)=>((Math.floor(W.t/PERIODE)+W.L.phase.get(cle(x,y)))%2)===0;
+function libre(W,x,y,ign){ const L=W.L; if(!dansGrille(L,x,y)) return false; const v=L.g[y][x]; return v===0||(v===2&&(ign||porteOuverte(W,x,y))); }
+function bfs(W,sx,sy,ign){ const L=W.L, [ex,ey]=L.sortie, prev=new Map([[cle(sx,sy),null]]), f=[[sx,sy]]; let ok=false;
+  while(f.length){ const [x,y]=f.shift(); if(x===ex&&y===ey){ok=true;break;}
+    for(const [dx,dy] of DIRS){ const k=cle(x+dx,y+dy); if(libre(W,x+dx,y+dy,ign)&&!prev.has(k)){ prev.set(k,[x,y]); f.push([x+dx,y+dy]); } } }
+  if(!ok) return []; const ch=[]; let c=[ex,ey]; while(c&&!(c[0]===sx&&c[1]===sy)){ ch.unshift(c); c=prev.get(cle(c[0],c[1])); } return ch; }
+function monde(L,seed){ return {L,t:0,ennemis:L.ennemisInit.map(([x,y])=>({x,y,px:x,py:y,sx:x,sy:y})),r:rng(seed+999)}; }
+function avancerMonde(W){ W.t++; if(W.t%2) return;
+  for(const e of W.ennemis){ let v=DIRS.filter(([dx,dy])=>libre(W,e.x+dx,e.y+dy)&&!(e.x+dx===e.px&&e.y+dy===e.py));
+    if(!v.length) v=DIRS.filter(([dx,dy])=>libre(W,e.x+dx,e.y+dy)); if(!v.length) continue;
+    const [dx,dy]=v[Math.floor(W.r()*v.length)]; e.px=e.x; e.py=e.y; e.x+=dx; e.y+=dy; } }
+const danger=(W,x,y)=>W.ennemis.some(e=>Math.abs(e.x-x)+Math.abs(e.y-y)<=1);
+
+function nouvelAgent(){ return {x:1,y:1,pas:0,jetons:0,visites:new Map([["1,1",1]]),pile:[[1,1]],recent:[],charges:3,chemin:[],source:null,carteLue:false,fin:null,tourne:0,murs:0,attrapes:0,attentes:0,
+  mangees:new Set(),chasseur:0,passeMur:0,confus:0,decouvertes:[],devores:0,pense:"Je commence.",outil:null}; }
+function bouger(a,L,x,y){
+  const p=a.pile; if(p.length>1&&p[p.length-2][0]===x&&p[p.length-2][1]===y) p.pop(); else p.push([x,y]);
+  a.x=x; a.y=y; const k=cle(x,y), n=(a.visites.get(k)||0)+1; a.visites.set(k,n);
+  a.recent.push(k); if(a.recent.length>4) a.recent.shift();
+  if(n>=3) a.tourne++; else if(n===1) a.tourne=0;
+  if(x===L.sortie[0]&&y===L.sortie[1]){ a.fin="sorti"; a.pense="🎉 La sortie !"; }
+}
+function attraper(a){ a.attrapes++; a.x=1; a.y=1; a.pile=[[1,1]]; a.chemin=[]; a.pense="😵 Attrapé par un gardien ! Retour au départ."; a.outil=null; }
+function contact(a,W){ if(a.fin) return; const e=W.ennemis.find(e=>e.x===a.x&&e.y===a.y); if(!e) return;
+  if(a.chasseur>0){ e.x=e.sx; e.y=e.sy; e.px=e.x; e.py=e.y; a.devores++; a.pense="🔵 Je dévore un gardien ! Il retourne à sa niche."; } else attraper(a); }
+function apresMouvement(a,W,c,r){
+  contact(a,W); if(a.fin) return;
+  const p=W.L.pastilles.find(q=>q.x===a.x&&q.y===a.y&&!a.mangees.has(cle(q.x,q.y))); if(!p) return;
+  const P=PASTILLES[p.type], connu=c.guide.has(p.type), prudent=c.regles.has("prudence");
+  const mange = connu ? p.type!=="rouge" : r() < (prudent?.05 : p.type==="rouge"?.9 : {1:.7,2:.5,3:.3}[c.prompt]);
+  if(!mange){ a.pense = connu?`Je laisse la ${P.ico} : mon guide dit que c'est un piège.`:`Une ${P.ico} inconnue… je n'y touche pas.`; return; }
+  a.mangees.add(cle(p.x,p.y)); a.jetons+=50;
+  if(p.type==="bleue") a.chasseur=P.duree; else if(p.type==="verte") a.passeMur=P.duree; else a.confus=P.duree;
+  if(!connu){ a.decouvertes.push(p.type);
+    a.pense=`J'avale une ${P.ico} inconnue${p.type==="rouge"?" qui promettait la sortie":""}… `+(p.type==="rouge"?"ma boussole s'affole !":p.type==="bleue"?"je me sens assez fort pour manger un gardien !":"je peux traverser les murs !")+" (noté dans ma mémoire)"; }
+  else a.pense=`Je mange la ${P.ico}, comme le dit mon guide : ${P.vrai}`;
+}
+function etapeAgent(a,W,c,r){
+  if(a.fin) return;
+  const L=W.L, T=c.outils, p=c.prompt, use=k=>T.has(k)&&r()<USAGE[p];
+  if(a.chasseur>0) a.chasseur--; if(a.passeMur>0) a.passeMur--; if(a.confus>0) a.confus--;
+  a.pas++; a.jetons+=150+(a.carteLue?1500:0)+c.guide.size*20; a.outil=null;
+  if(a.jetons>L.budgetJetons){ a.fin="epuise"; a.pense="💸 Budget de jetons épuisé : trop de contexte à chaque pas."; return; }
+  if(p===3&&(a.pas>L.budget*.9||a.jetons>L.budgetJetons*.9)){ a.fin="abandon"; a.pense="J'ai dépassé mon budget : je m'arrête et je le dis honnêtement."; return; }
+  if(a.pas>L.budget){ a.fin="epuise"; a.pense="… (budget épuisé, toujours perdu)"; return; }
+  if(T.has("web")&&r()<(p===3?.02:.15)){ a.outil="web"; a.jetons+=1500; a.pense="Et si je cherchais « sortir d'un labyrinthe » sur Internet ?"; return; }
+  const radar=use("radar"); if(radar) a.jetons+=OUTILS.radar.cout;
+  const D=()=>DIRS.map(d=>({dx:d[0],dy:d[1],nom:d[2]}));
+  if(radar&&a.chasseur===0&&danger(W,a.x,a.y)){ const ouv=D().filter(d=>libre(W,a.x+d.dx,a.y+d.dy)), loin=d=>Math.min(...W.ennemis.map(e=>Math.abs(e.x-a.x-d.dx)+Math.abs(e.y-a.y-d.dy)));
+    if(ouv.length){ ouv.sort((u,v)=>loin(v)-loin(u)); const f=ouv[0]; a.outil="radar"; a.pense=`📡 Un gardien juste à côté ! Je fuis vers ${f.nom}.`; bouger(a,L,a.x+f.dx,a.y+f.dy); apresMouvement(a,W,c,r); return; } }
+  if(a.chemin.length){ const [x,y]=a.chemin[0];
+    if(!libre(W,x,y)){ if(a.source==="carte"){ a.chemin=bfs(W,a.x,a.y); a.outil="carte"; a.pense="Une porte s'est fermée : je recalcule sur la carte."; if(!a.chemin.length){ a.attentes++; a.pense="Aucun chemin ouvert, j'attends."; } return; }
+      a.chemin=[]; a.pense="Le chemin indiqué vient de se fermer…"; return; }
+    if(radar&&a.chasseur===0&&danger(W,x,y)){ a.outil="radar"; a.attentes++; a.pense="📡 Un gardien sur le chemin, j'attends qu'il passe."; return; }
+    a.chemin.shift(); a.outil=a.source; a.pense=a.source==="carte"?"Je suis le plan.":"Je suis les indications du gardien."; bouger(a,L,x,y); apresMouvement(a,W,c,r); return; }
+  if(T.has("carte")&&!a.carteLue&&(p>=2||r()<.3)){ a.carteLue=true; a.outil="carte"; a.jetons+=6000; a.chemin=bfs(W,a.x,a.y); a.source="carte"; a.pense="Je charge la carte entière. Efficace… mais cher."; return; }
+  if(T.has("demander")&&a.charges>0&&(p===3?a.tourne>=3:r()<.02)){
+    const ch=bfs(W,a.x,a.y); a.charges--; a.outil="demander"; a.jetons+=400; a.tourne=0;
+    if(ch.length){ a.chemin=ch.slice(0,6); a.source="demander"; a.pense=`Je tourne en rond… je demande mon chemin (${a.charges} restante${a.charges>1?"s":""}).`; }
+    else a.pense="J'ai demandé mon chemin, mais tout est fermé pour l'instant."; return; }
+  const regarde=use("regarder"); if(regarde) a.jetons+=OUTILS.regarder.cout;
+  const k=d=>cle(a.x+d.dx,a.y+d.dy);
+  // passe-muraille actif
+  if(a.passeMur>0){ const [ex,ey]=L.sortie;
+    const sauts=D().map(d=>libre(W,a.x+d.dx,a.y+d.dy)?{...d,n:1}:(L.g[a.y+d.dy]&&L.g[a.y+d.dy][a.x+d.dx]===1&&libre(W,a.x+2*d.dx,a.y+2*d.dy))?{...d,n:2}:null).filter(Boolean);
+    if(sauts.length){ const dist=d=>Math.abs(ex-a.x-d.dx*d.n)+Math.abs(ey-a.y-d.dy*d.n);
+      if(T.has("boussole")||c.guide.has("verte")) sauts.sort((u,v)=>dist(u)-dist(v)); else sauts.sort(()=>r()-.5);
+      const d=sauts[0]; a.pense=d.n===2?`🟢 Je traverse le mur vers ${d.nom} !`:`🟢 J'avance vers ${d.nom}.`; bouger(a,L,a.x+d.dx*d.n,a.y+d.dy*d.n); apresMouvement(a,W,c,r); return; } }
+  let cand=D(); if(regarde) cand=cand.filter(d=>libre(W,a.x+d.dx,a.y+d.dy));
+  if(regarde){ const fermees=D().filter(d=>L.g[a.y+d.dy][a.x+d.dx]===2&&!porteOuverte(W,a.x+d.dx,a.y+d.dy)&&!a.visites.has(k(d)));
+    if(fermees.length&&use("horloge")){ const neuves=cand.filter(d=>!a.visites.has(k(d)));
+      if(!neuves.length||T.has("boussole")){ a.outil="horloge"; a.attentes++; a.jetons+=OUTILS.horloge.cout; a.pense=`⏱ Porte fermée vers ${fermees[0].nom} : elle rouvre dans ${PERIODE-W.t%PERIODE} pas, j'attends.`; return; } } }
+  const carnet=use("carnet"); if(carnet) a.jetons+=OUTILS.carnet.cout;
+  if(carnet){ const neuves=cand.filter(d=>!a.visites.has(k(d)));
+    if(neuves.length) cand=neuves;
+    else if(a.pile.length>1){ const [bx,by]=a.pile[a.pile.length-2];
+      if(radar&&a.chasseur===0&&danger(W,bx,by)){ a.outil="radar"; a.attentes++; a.pense="📡 Un gardien sur mon chemin de retour, j'attends."; return; }
+      if(libre(W,bx,by)){ a.outil="carnet"; a.pense="Cul-de-sac. Mon carnet me dit par où revenir."; bouger(a,L,bx,by); apresMouvement(a,W,c,r); return; } }
+    else { a.visites=new Map([[cle(a.x,a.y),1]]); a.outil="carnet"; a.pense="Plus rien de neuf dans mon carnet… je repars de zéro."; return; } }
+  else if(p>=2){ const f=cand.filter(d=>!a.recent.includes(k(d))); if(f.length) cand=f; }
+  if(radar&&a.chasseur===0){ const s=cand.filter(d=>!danger(W,a.x+d.dx,a.y+d.dy)); if(!s.length&&cand.length){ a.outil="radar"; a.attentes++; a.pense="📡 Un gardien rôde tout près, je ne bouge pas."; return; } cand=s; }
+  const bous=use("boussole"); if(bous) a.jetons+=OUTILS.boussole.cout;
+  for(let i=cand.length-1;i>0;i--){ const j=Math.floor(r()*(i+1)); [cand[i],cand[j]]=[cand[j],cand[i]]; }
+  if(bous){ const [ex,ey]=L.sortie, s=a.confus>0?-1:1; cand.sort((u,v)=>s*((Math.abs(ex-a.x-u.dx)+Math.abs(ey-a.y-u.dy))-(Math.abs(ex-a.x-v.dx)+Math.abs(ey-a.y-v.dy)))); }
+  // les pastilles en vue
+  let attire=null;
+  if(regarde){ const vues=L.pastilles.filter(q=>!a.mangees.has(cle(q.x,q.y))&&Math.abs(q.x-a.x)+Math.abs(q.y-a.y)<=4), prudent=c.regles.has("prudence");
+    const evite=vues.filter(q=>q.type==="rouge"&&c.guide.has("rouge")); if(evite.length){ const f=cand.filter(d=>!evite.some(q=>q.x===a.x+d.dx&&q.y===a.y+d.dy)); if(f.length) cand=f; }
+    attire=vues.find(q=>(c.guide.has(q.type)&&(q.type==="verte"||(q.type==="bleue"&&W.ennemis.length)))||(q.type==="rouge"&&!c.guide.has("rouge")&&!prudent))||null;
+    if(attire&&cand.length){ const dist=d=>Math.abs(attire.x-a.x-d.dx)+Math.abs(attire.y-a.y-d.dy); cand.sort((u,v)=>dist(u)-dist(v)); } }
+  const d=cand[0]; if(!d){ a.pense="Je suis bloqué…"; return; }
+  a.outil=bous?"boussole":carnet?"carnet":regarde?"regarder":null;
+  if(!libre(W,a.x+d.dx,a.y+d.dy)){ a.murs++; a.pense=`💥 Un mur ! Je n'avais pas regardé avant d'aller vers ${d.nom}.`; return; }
+  const deja=a.visites.has(k(d));
+  if(attire) a.pense = attire.type==="rouge"&&!c.guide.has("rouge") ? "🔴 Une pastille promet de me téléporter à la sortie ! J'y vais." : `Mon guide dit que la ${PASTILLES[attire.type].ico} m'aidera : j'y vais.`;
+  else a.pense=bous?(a.confus>0?`🔴 Ma boussole indique ${d.nom}… elle a l'air folle.`:`La boussole dit d'aller vers ${d.nom}.`)+(deja&&!carnet?" Déjà vu ?":"")
+        :carnet?`Une case jamais visitée vers ${d.nom}, je la note.`
+        :regarde?`Je vois ${cand.length} passage${cand.length>1?"s":""}, je prends vers ${d.nom} au hasard.`+(deja?" Déjà vu ?":"")
+        :`Je ne vois rien, je tente ${d.nom}.`;
+  bouger(a,L,a.x+d.dx,a.y+d.dy); apresMouvement(a,W,c,r);
+}
+function tick(T){ avancerMonde(T.W); for(const ag of T.agents){ etapeAgent(ag.a,T.W,ag.cfg,ag.r); contact(ag.a,T.W); } }
+
+/* ====== ÉVALUATION (mêmes labyrinthes, mêmes tirages : comparaison à armes égales) ====== */
+const SEEDS=[11,22,33,44,55], ESSAIS=4;
+function evaluer(h,niveaux){ const res={}, dec={};
+  for(const n of niveaux){ let ok=0,jet=0,tot=0,attr=0;
+    for(const sd of SEEDS) for(let k=0;k<ESSAIS;k++){ const L=genLab(sd,n), ag={cfg:h,a:nouvelAgent(),r:rng(sd*1000+k*31+n)}, T={W:monde(L,sd),agents:[ag]};
+      let g=0; while(!ag.a.fin&&g++<2500) tick(T); tot++; if(ag.a.fin==="sorti") ok++; jet+=ag.a.jetons; attr+=ag.a.attrapes;
+      for(const t of ag.a.decouvertes) dec[t]=(dec[t]||0)+1; }
+    res[n]={ok:Math.round(100*ok/tot),jet:Math.round(jet/tot),attr:+(attr/tot).toFixed(1)}; }
+  return {res,dec}; }
+const clone=h=>({prompt:h.prompt,outils:new Set(h.outils),guide:new Set(h.guide),regles:new Set(h.regles)});
+
+/* ====== SCÈNE ====== */
+const view=document.getElementById("view");
+const scene=new THREE.Scene(); scene.background=new THREE.Color(0x0d1117);
+const renderer=new THREE.WebGLRenderer({antialias:true}); renderer.setPixelRatio(Math.min(devicePixelRatio,2)); renderer.shadowMap.enabled=true; view.appendChild(renderer.domElement);
+const labels=new CSS2DRenderer(); Object.assign(labels.domElement.style,{position:"absolute",top:"0",pointerEvents:"none"}); view.appendChild(labels.domElement);
+const cam=new THREE.OrthographicCamera(-1,1,1,-1,-300,500); cam.position.set(0,50,30);
+const controls=new OrbitControls(cam,renderer.domElement); controls.maxPolarAngle=1.2; controls.enableDamping=true;
+let cadre={w:24,h:24};
+function resize(){ const w=view.clientWidth,h=view.clientHeight,a=w/h; renderer.setSize(w,h); labels.setSize(w,h);
+  const f=Math.max(cadre.h+5,(cadre.w+3)/a); cam.left=-f*a/2; cam.right=f*a/2; cam.top=f/2; cam.bottom=-f/2; cam.updateProjectionMatrix(); }
+addEventListener("resize",resize);
+scene.add(new THREE.HemisphereLight(0xbfd4ff,0x202530,1));
+const sun=new THREE.DirectionalLight(0xffffff,1.1); sun.position.set(-15,40,20); sun.castShadow=true; sun.shadow.mapSize.set(2048,2048);
+Object.assign(sun.shadow.camera,{left:-30,right:30,top:25,bottom:-25}); scene.add(sun);
+function lbl(html,obj,y,cls){ const d=document.createElement("div"); d.className=cls; d.innerHTML=html; const o=new CSS2DObject(d); o.position.set(0,y,0); obj.add(o); return d; }
+const tmp=new THREE.Object3D(), coulTmp=new THREE.Color();
+let T=null;
+function construire(L,W,agents,titre){
+  if(T){ T.g.traverse(o=>{ if(o.isCSS2DObject) o.element.remove(); }); scene.remove(T.g); }
+  const G=L.G, g=new THREE.Group(); g.position.set(-G/2+.5,0,-G/2+.5); scene.add(g);
+  const murs=new THREE.InstancedMesh(new THREE.BoxGeometry(1,1.1,1),new THREE.MeshStandardMaterial({color:0x3a4250}),G*G); murs.castShadow=true; murs.receiveShadow=true;
+  let n=0; const sols=[], portes=new Map(), solGeo=new THREE.PlaneGeometry(.96,.96);
+  for(let y=0;y<G;y++) for(let x=0;x<G;x++){ const v=L.g[y][x];
+    if(v===1){ tmp.position.set(x,.55,y); tmp.scale.set(1,1,1); tmp.updateMatrix(); murs.setMatrixAt(n++,tmp.matrix); continue; }
+    const s=new THREE.Mesh(solGeo,new THREE.MeshStandardMaterial({color:0x1a2029})); s.rotation.x=-Math.PI/2; s.position.set(x,.01,y); s.receiveShadow=true; g.add(s); sols[y*G+x]=s;
+    if(v===2){ const pm=new THREE.Mesh(new THREE.BoxGeometry(.9,1.1,.9),new THREE.MeshStandardMaterial({color:0xd4a72c,emissive:0x6b4f00})); pm.position.set(x,.55,y); g.add(pm); portes.set(cle(x,y),pm); } }
+  murs.count=n; g.add(murs);
+  const so=new THREE.Mesh(new THREE.CylinderGeometry(.4,.4,.15,20),new THREE.MeshStandardMaterial({color:0x3fb27f,emissive:0x3fb27f,emissiveIntensity:1.2})); so.position.set(L.sortie[0],.1,L.sortie[1]); g.add(so);
+  const pastilles=L.pastilles.map(q=>{ const m=new THREE.Mesh(new THREE.SphereGeometry(.24,16,16),new THREE.MeshStandardMaterial({color:PASTILLES[q.type].coul,emissive:PASTILLES[q.type].coul,emissiveIntensity:.9})); m.position.set(q.x,.35,q.y); g.add(m); return {q,m}; });
+  const ennemis=W.ennemis.map(()=>{ const m=new THREE.Mesh(new THREE.ConeGeometry(.38,.9,5),new THREE.MeshStandardMaterial({color:0xe5534b,emissive:0x5a0000})); m.castShadow=true; g.add(m); return m; });
+  const inst=new THREE.InstancedMesh(new THREE.SphereGeometry(.2,10,10),new THREE.MeshStandardMaterial({color:0xffffff}),agents.length);
+  agents.forEach((ag,i)=>{ inst.setColorAt(i,coulTmp.set(0xffffff)); ag.rx=1; ag.ry=1; ag.jx=(((i*37)%11)/11-.45)*.55; ag.jy=(((i*53)%11)/11-.45)*.55; }); g.add(inst);
+  const t=new THREE.Object3D(); t.position.set(G/2-.5,0,-1.3); g.add(t); lbl(titre,t,0,"lane");
+  T={L,W,agents,g,sols,portes,ennemis,inst,pastilles,G}; cadre={w:G+2,h:G+2}; resize();
+}
+const marque=new THREE.Group(); scene.add(marque);
+const anneau=new THREE.Mesh(new THREE.RingGeometry(.38,.55,32),new THREE.MeshBasicMaterial({color:0xffffff,side:THREE.DoubleSide})); anneau.rotation.x=-Math.PI/2; anneau.position.y=.05; marque.add(anneau);
+const icoMarque=lbl("",marque,1.3,"ico");
+
+/* ====== CAMPAGNE ====== */
+let prod={prompt:1,outils:new Set(["regarder"]),guide:new Set(),regles:new Set()};
+let version=0, tour=1, ref={}, debloques=[0,1], phase="pret", enCours=false, vitesse=1, acc=0, selI=0, decTour={}, nouveautes=new Set(), dernierBilan=null;
+const NB_VISU=30, PAS_T=.13, CAPA0=3, MAX_AJOUTS=2, MAX_RETRAITS=2;
+const capacite=()=>CAPA0+debloques.length-2;
+const taille=h=>h.outils.size+h.guide.size+h.regles.size;
+const nomNiv=n=>`${n+1} · ${NIVEAUX[n].nom}`;
+function setPhase(p,txt,bg){ phase=p; const el=document.getElementById("phase"); el.textContent=txt; el.style.background=bg;
+  document.getElementById("go").disabled=p!=="pret"; document.getElementById("passer").disabled=p!=="run"; }
+function majTop(){ document.getElementById("tour").textContent=tour; document.getElementById("ver").textContent="v"+version;
+  document.getElementById("niveaux").innerHTML=NIVEAUX.map((n,i)=>{ const o=debloques.includes(i), s=o&&ref[i]>=90; return `<span class="niv ${s?"ok":o?"ouvert":"ferme"}">${s?"✅":o?"🔓":"🔒"} ${i+1}${o&&ref[i]!=null?` · ${ref[i]} %`:""}</span>`; }).join(" "); }
+function majDeck(){ const h=prod, n=nouveautes;
+  document.getElementById("deck").innerHTML=`<h4>🃏 Ton harnais en production (v${version}) · 🎒 ${taille(h)}/${capacite()} emplacements <span class="aide">— ce que chaque agent reçoit au départ. Le modèle, lui, ne change jamais : Haiku.</span></h4><div class="cartes">
+    <div class="carte prompt ${n.has("prompt")?"neuve":""}"><b>📝 prompt v${h.prompt}</b><br>« ${PROMPTS[h.prompt]} »</div>
+    ${[...h.regles].map(k=>`<div class="carte regle ${n.has("r:"+k)?"neuve":""}"><b>⚖ règle ${REGLES[k].nom}</b><br>« ${REGLES[k].txt} »</div>`).join("")}
+    ${ORDRE.filter(k=>h.outils.has(k)).map(k=>`<div class="carte ${n.has("o:"+k)?"neuve":""}"><b>${OUTILS[k].ico} ${OUTILS[k].nom}</b><br>${OUTILS[k].desc}</div>`).join("")}
+    ${[...h.guide].map(t=>`<div class="carte guide ${n.has("g:"+t)?"neuve":""}"><b>📖 guide : ${PASTILLES[t].ico} ${PASTILLES[t].nom}</b><br>${PASTILLES[t].vrai}</div>`).join("")||`<div class="carte guide" style="opacity:.5"><b>📖 guide des pastilles</b><br>vide : l'agent ne sait pas ce qu'elles font.</div>`}
+    ${Array.from({length:Math.max(0,capacite()-taille(h))},()=>`<div class="carte" style="border-style:dashed;opacity:.45"><b>＋ emplacement libre</b><br>à gagner en promouvant</div>`).join("")}
+  </div>`; }
+function texteHarnais(h){ return PROMPTS[h.prompt]+[...h.regles].map(k=>" "+REGLES[k].txt).join(""); }
+function majTete(){ if(!T) return; const ag=T.agents[selI], a=ag.a, c=ag.cfg;
+  document.getElementById("tQui").innerHTML=`Agent n°${selI+1} · harnais v${version}`+(a.chasseur?" · 🔵":"")+(a.passeMur?" · 🟢":"")+(a.confus?" · 🔴":"");
+  document.getElementById("pense").textContent="« "+a.pense+" »";
+  document.getElementById("tOutils").innerHTML=ORDRE.filter(k=>c.outils.has(k)).map(k=>`<span class="vu ${a.outil===k?"pris":""}">${OUTILS[k].ico} ${OUTILS[k].nom}</span>`).join("")+[...c.guide].map(t=>`<span class="vu">📖${PASTILLES[t].ico}</span>`).join("");
+  document.getElementById("tStats").textContent=`👣 ${a.pas} pas · ⛏ ${a.jetons.toLocaleString("fr")} · 😵 ${a.attrapes} · 🔵 ${a.devores} gardien(s) dévoré(s) · 🧠 découvertes : ${a.decouvertes.map(t=>PASTILLES[t].ico).join("")||"—"}`; }
+function majLive(){ if(!T) return; const A=T.agents.map(x=>x.a);
+  document.getElementById("live").innerHTML=`Niveau affiché : <b>${nomNiv(T.L.niv)}</b><br>✅ ${A.filter(a=>a.fin==="sorti").length}/${A.length} sortis · 🏳 ${A.filter(a=>a.fin==="abandon").length} · ❌ ${A.filter(a=>a.fin==="epuise").length} · en route ${A.filter(a=>!a.fin).length}<br>
+    😵 ${A.reduce((t,a)=>t+a.attrapes,0)} captures · 🔴 ${A.filter(a=>a.mangees.size&&a.decouvertes.includes("rouge")).length} agents piégés par la fausse pastille`; }
+
+function lancerTour(){
+  nouveautes=new Set(); majDeck();
+  document.getElementById("zBilan").innerHTML=""; document.getElementById("zRun").style.display="";
+  const n=Math.max(...debloques), sd=Math.floor(Math.random()*1e6), L=genLab(sd,n), W=monde(L,sd);
+  const agents=Array.from({length:NB_VISU},(_,i)=>({cfg:prod,a:nouvelAgent(),r:rng(sd+i*7919)}));
+  construire(L,W,agents,`Tour ${tour} · niveau ${nomNiv(n)} · ${NB_VISU} agents, harnais v${version}`); selI=0;
+  setPhase("run","👀 Ton harnais de production joue","#1f6feb"); enCours=true; majTop();
+}
+function finRun(){ enCours=false; setPhase("calcul","🧮 Évaluation en coulisse…","#6e40c9");
+  decTour={}; for(const ag of T.agents) for(const t of ag.a.decouvertes) decTour[t]=(decTour[t]||0)+1;
+  setTimeout(bilan,60); }
+function bilan(){
+  const base=evaluer(prod,debloques);
+  for(const [t,v] of Object.entries(base.dec)) decTour[t]=(decTour[t]||0)+v;
+  if(version===0&&Object.keys(ref).length===0) for(const n of debloques) ref[n]=base.res[n].ok;
+  for(const n of debloques) if(ref[n]==null) ref[n]=base.res[n].ok;
+  // candidats : chaque changement mesuré seul, sur les mêmes labyrinthes
+  const cands=[];
+  for(const k of ORDRE){ const h=clone(prod); h.outils.has(k)?h.outils.delete(k):h.outils.add(k); cands.push({id:"o:"+k,txt:(prod.outils.has(k)?"➖ retirer ":"➕ ajouter ")+OUTILS[k].ico+" "+OUTILS[k].nom,h,type:"outil",retrait:prod.outils.has(k)}); }
+  if(prod.prompt<3){ const h=clone(prod); h.prompt++; cands.push({id:"prompt",txt:`📝 passer au prompt v${h.prompt}`,h,type:"prompt"}); }
+  for(const t of Object.keys(decTour)) if(!prod.guide.has(t)){ const h=clone(prod); h.guide.add(t); cands.push({id:"g:"+t,txt:`📖 inscrire au guide : ${PASTILLES[t].ico} ${PASTILLES[t].nom}`,sous:`découvert ${decTour[t]} fois par des agents qui l'ont avalée`,h,type:"guide"}); }
+  if(decTour.rouge&&!prod.regles.has("prudence")){ const h=clone(prod); h.regles.add("prudence"); cands.push({id:"r:prudence",txt:"⚖ ajouter la règle « prudence »",sous:REGLES.prudence.txt,h,type:"regle"}); }
+  for(const c of cands){ const e=evaluer(c.h,debloques).res; c.d=Math.round(debloques.reduce((s,n)=>s+e[n].ok-base.res[n].ok,0)/debloques.length);
+    c.dj=Math.round(100*(debloques.reduce((s,n)=>s+e[n].jet,0)/debloques.reduce((s,n)=>s+base.res[n].jet,0)-1)); c.pire=Math.min(...debloques.map(n=>e[n].ok-base.res[n].ok)); }
+  cands.sort((u,v)=>v.d-u.d||u.dj-v.dj);
+  dernierBilan={base,cands,choix:new Set()};
+  afficherBilan(); setPhase("bilan","⚖ À toi : promeus ou refuse","#9a6700");
+}
+function compte(){ const {cands,choix}=dernierBilan; let aj=0,ret=0,cartes=0;
+  for(const i of choix){ const c=cands[i]; if(c.retrait) ret++; else { aj++; if(c.type!=="prompt") cartes++; } }
+  return {aj,ret,cartes,libres:capacite()-taille(prod)+ret}; }
+function autorise(i){ const c=dernierBilan.cands[i], k=compte();
+  if(dernierBilan.choix.has(i)){ if(c.retrait&&k.cartes>k.libres-1) return "retire d'abord un ajout : cet emplacement est déjà repris"; return null; }
+  if(c.retrait) return k.ret>=MAX_RETRAITS?`déjà ${MAX_RETRAITS} retraits ce tour`:null;
+  if(k.aj>=MAX_AJOUTS) return `déjà ${MAX_AJOUTS} ajouts ce tour`;
+  if(c.type!=="prompt"&&k.cartes>=k.libres) return "plus d'emplacement libre : retire une carte pour en gagner un";
+  return null; }
+function afficherBilan(){ const {base,cands,choix}=dernierBilan, k=compte();
+  document.getElementById("zRun").style.display="none";
+  const cls=d=>d>0?"plus":d<0?"moins":"nul";
+  document.getElementById("zBilan").innerHTML=`
+    <h3>📊 Résultats du tour (20 essais par niveau)</h3>
+    <table><tr><th>Niveau</th><th>v${version}</th><th>Référence</th></tr>${debloques.map(n=>`<tr><td>${nomNiv(n)}</td><td><b>${base.res[n].ok} %</b> <span class="aide">${(base.res[n].jet/1000).toFixed(1)}k jetons</span></td><td class="aide">${ref[n]} %</td></tr>`).join("")}</table>
+    <h3>💡 Candidats de la boucle d'apprentissage</h3>
+    <div class="bloc" style="margin:0 0 6px">🎒 Emplacements : <b>${taille(prod)-k.ret+k.cartes}/${capacite()}</b> · ce tour : <b>+${k.aj}/${MAX_AJOUTS}</b> ajouts · <b>−${k.ret}/${MAX_RETRAITS}</b> retraits<br><span class="aide">Retirer une carte libère un emplacement. Chaque niveau débloqué donne un emplacement de plus.</span></div>
+    <div class="aide">Chaque changement a été <b>mesuré seul</b>, sur les mêmes labyrinthes. Clique pour sélectionner ceux que tu promeus. Attention, ensemble ils peuvent interagir : la Porte vérifiera.</div>
+    <table id="cands">${cands.map((c,i)=>{ const non=!choix.has(i)&&autorise(i); return `<tr class="cand ${choix.has(i)?"choisi":""}" data-i="${i}" style="${non?"opacity:.4":""}" title="${non||""}"><td>${choix.has(i)?"☑":non?"🔒":"☐"}</td><td>${c.txt}${c.sous?`<br><span class="aide">${c.sous}</span>`:""}${c.pire<-5&&c.d>0?`<br><span class="aide moins">⚠ fait baisser un niveau de ${-c.pire} pts</span>`:""}</td>
+      <td class="delta ${cls(c.d)}">${c.d>0?"+":""}${c.d} pts</td><td class="aide">${c.dj>0?"+":""}${c.dj} % jetons</td></tr>`; }).join("")}</table>
+    <button id="porteBtn" style="width:100%;margin-top:8px" ${choix.size?"":"disabled"}>🚧 Soumettre ${choix.size} changement(s) à la Porte</button>`;
+  document.querySelectorAll(".cand").forEach(tr=>tr.onclick=()=>{ const i=+tr.dataset.i, raison=autorise(i); if(raison){ banniere("🔒 "+raison,"#6e40c9"); return; } choix.has(i)?choix.delete(i):choix.add(i); afficherBilan(); });
+  document.getElementById("porteBtn").onclick=porte;
+}
+function porte(){
+  const {cands,choix}=dernierBilan, h=clone(prod);
+  for(const i of choix){ const c=cands[i]; if(c.type==="outil"){ const k=c.id.slice(2); prod.outils.has(k)?h.outils.delete(k):h.outils.add(k); }
+    else if(c.type==="prompt") h.prompt=c.h.prompt; else if(c.type==="guide") h.guide.add(c.id.slice(2)); else if(c.type==="regle") h.regles.add("prudence"); }
+  const e=evaluer(h,debloques).res, regs=debloques.filter(n=>e[n].ok<ref[n]-10);
+  const lignes=debloques.map(n=>{ const d=e[n].ok-ref[n]; return `<tr><td>${nomNiv(n)}</td><td class="aide">${ref[n]} %</td><td><b>${e[n].ok} %</b></td><td class="delta ${d>0?"plus":d<-10?"moins":"nul"}">${d>0?"+":""}${d}</td></tr>`; }).join("");
+  let html=`<h3>🚧 La Porte : rejeu de tous les niveaux</h3><table><tr><th>Niveau</th><th>Référence</th><th>Candidat</th><th>Écart</th></tr>${lignes}</table>`;
+  if(regs.length){
+    html+=`<div class="bloc"><b class="moins">❌ Refusé : régression</b> sur ${regs.map(nomNiv).join(", ")}.<br>Ces niveaux marchaient avec la v${version}, ils ne marchent plus. Rien n'est mis en production.</div>`;
+    banniere(`📉 Régression — la v${version} reste en production`,"#b62324");
+  } else {
+    nouveautes=new Set([...choix].map(i=>cands[i].id)); prod=h; version++; for(const n of debloques) ref[n]=e[n].ok;
+    html+=`<div class="bloc"><b class="plus">✅ Accepté</b> : la v${version} part en production et devient la nouvelle référence.</div>`;
+    banniere(`🚀 v${version} en production`,"#238636");
+    const sat=debloques.every(n=>ref[n]>=90);
+    if(sat){ const suivant=debloques.length<NIVEAUX.length?debloques.length:null;
+      if(suivant!=null){ debloques.push(suivant); html+=`<div class="bloc">🏆 <b>Saturation</b> : tous les niveaux dépassent 90 %. L'examen ne mesure plus rien… nouveau niveau débloqué : <b>${nomNiv(suivant)}</b>, et 🎒 +1 emplacement.</div>`; setTimeout(()=>banniere(`🏆 Saturation — niveau ${nomNiv(suivant)} débloqué`,"#9a6700"),1600); }
+      else html+=`<div class="bloc">🏆 <b>Saturation totale</b> : ton harnais réussit tout. Il faudrait inventer des niveaux plus durs.</div>`; }
+  }
+  tour++; majTop(); majDeck();
+  html+=`<button id="suite" style="width:100%;margin-top:8px">▶ Tour ${tour}</button>`;
+  document.getElementById("zBilan").innerHTML=html; document.getElementById("suite").onclick=lancerTour;
+  setPhase("pret",regs.length?"🔁 Corrige et rejoue":"🛠 Prêt pour le tour suivant","#30363d");
+}
+const banEl=document.getElementById("banniere"); let banT;
+function banniere(txt,bg){ banEl.textContent=txt; banEl.style.background=bg; banEl.style.display="block"; clearTimeout(banT); banT=setTimeout(()=>banEl.style.display="none",3500); }
+document.getElementById("go").onclick=lancerTour;
+document.getElementById("passer").onclick=()=>{ let g=0; while(T.agents.some(x=>!x.a.fin)&&g++<3000) tick(T); finRun(); };
+document.getElementById("vite").onclick=e=>{ vitesse=vitesse===1?3:vitesse===3?8:vitesse===8?20:1; e.target.textContent=`⏩ x${vitesse}`; };
+const ray=new THREE.Raycaster(), souris=new THREE.Vector2();
+renderer.domElement.addEventListener("pointerdown",e=>{ if(!T) return; const r=renderer.domElement.getBoundingClientRect(); souris.set(((e.clientX-r.left)/r.width)*2-1,-((e.clientY-r.top)/r.height)*2+1);
+  ray.setFromCamera(souris,cam); const h=ray.intersectObject(T.inst)[0]; if(h){ selI=h.instanceId; majTete(); } });
+
+/* ====== BOUCLE ====== */
+const horloge=new THREE.Clock();
+function anim(){
+  requestAnimationFrame(anim);
+  const dt=Math.min(horloge.getDelta(),.05);
+  if(enCours&&T){ acc+=dt*vitesse; let n=0;
+    while(acc>=PAS_T&&n<40){ acc-=PAS_T; n++; tick(T); if(T.agents.every(x=>x.a.fin)){ finRun(); break; } }
+    if(n){ for(const [k,m] of T.portes){ const [x,y]=k.split(",").map(Number), o=porteOuverte(T.W,x,y); m.scale.y=o?.08:1; m.position.y=o?.05:.55; }
+      const a=T.agents[selI].a; for(const s of T.sols) if(s) s.material.color.set(0x1a2029);
+      for(const [k,v] of a.visites){ const [x,y]=k.split(",").map(Number), s=T.sols[y*T.G+x]; if(s) s.material.color.set(v>=3?0xb62324:v===2?0x9a6700:0x1f6f4a); }
+      majTete(); majLive(); } }
+  if(T){
+    T.agents.forEach((ag,i)=>{ const a=ag.a; ag.rx+=(a.x-ag.rx)*.35; ag.ry+=(a.y-ag.ry)*.35;
+      tmp.position.set(ag.rx+ag.jx,.3,ag.ry+ag.jy); tmp.scale.setScalar(a.fin==="sorti"?0:a.fin?.55:1); tmp.updateMatrix(); T.inst.setMatrixAt(i,tmp.matrix);
+      T.inst.setColorAt(i,coulTmp.set(a.chasseur?0x58a6ff:a.passeMur?0x3fb27f:a.confus?0xe5534b:0xffffff)); });
+    T.inst.instanceMatrix.needsUpdate=true; if(T.inst.instanceColor) T.inst.instanceColor.needsUpdate=true;
+    T.W.ennemis.forEach((e,i)=>{ const m=T.ennemis[i]; m.position.x+=(e.x-m.position.x)*.3; m.position.z+=(e.y-m.position.z)*.3; m.position.y=.45; });
+    const sel=T.agents[selI]; for(const {q,m} of T.pastilles){ m.visible=!sel.a.mangees.has(cle(q.x,q.y)); m.scale.setScalar(1+Math.sin(performance.now()/200)*.15); }
+    marque.position.set(T.g.position.x+sel.rx+sel.jx,0,T.g.position.z+sel.ry+sel.jy); icoMarque.textContent=sel.a.outil?OUTILS[sel.a.outil].ico:"";
+  }
+  controls.update(); renderer.render(scene,cam); labels.render(scene,cam);
+}
+setPhase("pret","🛠 Ton harnais v0 est très pauvre. Lance le tour 1.","#30363d"); majTop(); majDeck(); resize(); anim();
+</script>
+</body>
+</html>
