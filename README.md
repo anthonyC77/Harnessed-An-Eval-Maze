@@ -8,11 +8,11 @@ Every agent here runs the same model. What changes is its **harness**: the syste
 
 ## How a turn works
 
-1. **Run**: 30 agents using your production harness try to escape the hardest maze you have unlocked. Each step, an agent picks one of its tools: look, compass, notebook, ask for directions, radar, clock…
+1. **Run**: 30 agents using your production harness try to escape a maze. Pick any unlocked level, reroll the maze whenever you like. Each step, an agent picks one of its tools: look, compass, notebook, ask for directions, radar, clock…
 2. **Evaluate**: behind the scenes, your harness replays every unlocked level 20 times. The learning loop then proposes **candidates**: add or remove a tool, upgrade the prompt, write a discovery into the guide. Each candidate is measured on its own, on the same mazes.
-3. **Promote**: you are the human referee. You get limited slots and at most 2 additions and 2 removals per turn, so choose carefully.
+3. **Promote**: you are the human referee. You get limited slots and at most 1 addition and 1 removal per turn, or you can keep everything as it is. Use the 🪞 mirror to watch a candidate race your production harness on the same maze before you decide.
 4. **Gate**: the new harness replays all levels. If any level drops by more than 10 points, the gate rejects it. If it passes, it ships as a new version and becomes the reference.
-5. **Saturation**: once every level is above 90 %, the exam stops measuring anything. A harder level unlocks, along with one more slot.
+5. **Saturation**: once every level is above 90 %, the exam stops measuring anything. A harder level unlocks, along with one more slot and new cards: tools such as the clock, the radar or the full map, and new prompts.
 
 ## What's in the maze
 
@@ -29,12 +29,13 @@ Every agent here runs the same model. What changes is its **harness**: the syste
 
 | In the game | In real agent work |
 |---|---|
-| Prompt v1 → v3 | System prompt precision |
+| Seven prompts (vague, hasty, frugal, right-hand rule, precise, think-aloud…) | System prompt design and its cost |
 | Tools, slots | Tool selection; a limited context budget |
 | Guide of pills | Skills and documentation |
 | The red pill | A tool description that lies, like prompt injection |
 | Token budget, full map | Cost of context |
-| Candidates measured alone | Ablation studies |
+| Candidates measured alone, one change per turn | Ablation studies |
+| The mirror | A/B comparison with common random numbers |
 | One run vs. 20 runs | Variance |
 | The gate | Regression testing before release |
 | Everyone scores 100 % | Eval saturation |
